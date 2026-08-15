@@ -1,22 +1,18 @@
-/**
+﻿/**
  * Builds the game-resource tree the app ships from your own retail Red Alert 2
  * files — the offline equivalent of the engine's in-browser importer.
  *
- *   RA2_RETAIL_DIR=/path/to/steam-retail bun scripts/prepare-gameres.ts
+ *   RA2_RETAIL_DIR=/path/to/steam-retail npx tsx scripts/prepare-gameres.ts
  *
  * Produces:
  *   gameres-export/            ra2.mix, language.mix, multi.mix, music/*.mp3,
  *                              ra2ts_l.webm (menu video), glsl.png (splash)
  *   redalert2/public/general.csf   English in-game strings (from language.mix)
- *
- * Requires ffmpeg on PATH (brew install ffmpeg) for music/video conversion.
- * No game assets are committed to this repo — this script exists so a fresh
- * clone plus a legally-owned copy of the game can produce a working build.
  */
 import { execFileSync } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { deflateSync } from "node:zlib";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { MixFile } from "../redalert2/src/data/MixFile";
 import { ShpFile } from "../redalert2/src/data/ShpFile";
 import { Palette } from "../redalert2/src/data/Palette";
@@ -30,14 +26,32 @@ if (!RETAIL) {
     console.error(
         "RA2_RETAIL_DIR is not set.\n\n" +
             "Point it at your own Red Alert 2 install (the folder containing ra2.mix), e.g.:\n" +
-            '  RA2_RETAIL_DIR="/path/to/steamapps/common/Command & Conquer Red Alert 2" bun scripts/prepare-gameres.ts\n\n' +
-            "Or use the friendly wrapper: ./scripts/setup.sh <path>",
+            '  RA2_RETAIL_DIR="/path/to/steamapps/common/Command & Conquer Red Alert 2" npx tsx scripts/prepare-gameres.ts\n\n' +
+            "Or use the friendly wrapper: ./scripts/setup-android.ps1 <path>",
     );
     process.exit(1);
 }
-const ROOT = join(import.meta.dir, "..");
+
+const currentDir = typeof import.meta.dirname === "string"
+    ? import.meta.dirname
+    : ((import.meta as any).dir ?? resolve("."));
+const ROOT = resolve(currentDir, "..");
 const OUT = join(ROOT, "gameres-export");
 const TMP = join(OUT, ".tmp");
+
+// Locate ffmpeg binary
+let ffmpegBin = "ffmpeg";
+if (process.env.FFMPEG_PATH && existsSync(process.env.FFMPEG_PATH)) {
+    ffmpegBin = process.env.FFMPEG_PATH;
+} else {
+    try {
+        const ffmpegStaticPath = join(ROOT, "redalert2", "node_modules", "ffmpeg-static", process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg");
+        if (existsSync(ffmpegStaticPath)) {
+            ffmpegBin = ffmpegStaticPath;
+        }
+    } catch {}
+}
+console.log(`Using ffmpeg: ${ffmpegBin}`);
 
 function retailFile(name: string): string {
     for (const candidate of [name, name.toUpperCase(), name.toLowerCase()]) {
@@ -121,7 +135,7 @@ for (const wavName of trackNames) {
     const wavPath = join(TMP, wavName);
     extractTo(themeMix, wavName, wavPath);
     const mp3Name = wavName.replace(/\.wav$/i, ".mp3");
-    execFileSync("ffmpeg", ["-y", "-loglevel", "error", "-i", wavPath, "-vn", "-ar", "22050", "-q:a", "5", join(OUT, "music", mp3Name)]);
+    execFileSync(ffmpegBin, ["-y", "-loglevel", "error", "-i", wavPath, "-vn", "-ar", "22050", "-q:a", "5", join(OUT, "music", mp3Name)]);
     console.log(`   ${mp3Name}`);
 }
 
@@ -129,7 +143,7 @@ console.log("== Converting menu video (ra2ts_l.bik -> ra2ts_l.webm)");
 if (langMix.containsFile("ra2ts_l.bik")) {
     const bikPath = join(TMP, "ra2ts_l.bik");
     extractTo(langMix, "ra2ts_l.bik", bikPath);
-    execFileSync("ffmpeg", ["-y", "-loglevel", "error", "-i", bikPath, "-c:v", "libvpx", "-b:v", "1M", "-an", join(OUT, "ra2ts_l.webm")]);
+    execFileSync(ffmpegBin, ["-y", "-loglevel", "error", "-i", bikPath, "-c:v", "libvpx", "-b:v", "1M", "-an", join(OUT, "ra2ts_l.webm")]);
     console.log("   ra2ts_l.webm");
 } else {
     console.warn("   (skip) ra2ts_l.bik not found in language.mix");
@@ -182,8 +196,6 @@ try {
 
 console.log("== Converting YR music (thememd.mix -> music/*.mp3)");
 try {
-    // Track list comes from thememd.ini (inside ra2md.mix -> localmd.mix):
-    // MIX archives store hashed names, so the ini is the only name source.
     const ra2mdMix = openMix(retailFile("ra2md.mix"));
     const localmd = new MixFile(ra2mdMix.openFile("localmd.mix").stream);
     const themeIni = new IniFile(localmd.openFile("thememd.ini"));
@@ -199,7 +211,7 @@ try {
         if (existsSync(join(OUT, "music", mp3Name))) continue;
         const wavPath = join(TMP, wavName);
         extractTo(thememdMix, wavName, wavPath);
-        execFileSync("ffmpeg", ["-y", "-loglevel", "error", "-i", wavPath, "-vn", "-ar", "22050", "-q:a", "5", join(OUT, "music", mp3Name)]);
+        execFileSync(ffmpegBin, ["-y", "-loglevel", "error", "-i", wavPath, "-vn", "-ar", "22050", "-q:a", "5", join(OUT, "music", mp3Name)]);
         console.log(`   ${mp3Name}`);
     }
 } catch (e) {
@@ -238,4 +250,4 @@ const walk = (dir: string, prefix: string) => {
 walk(OUT, "");
 writeFileSync(join(OUT, "manifest.json"), JSON.stringify({ files: manifestFiles }, null, 1));
 
-console.log("== Done. Now run scripts/build-ios.sh to bundle everything.");
+console.log("== Done. Assets prepared successfully into gameres-export/");

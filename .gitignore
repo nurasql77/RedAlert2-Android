@@ -3,6 +3,8 @@
 gameres-export/
 ios/Resources/GameRes/
 ios/Resources/WebDist/
+android/app/src/main/assets/GameRes/
+android/app/src/main/assets/WebDist/
 redalert2/public/local-pack/
 # Retail English string tables, extracted from your language(md).mix at import time.
 redalert2/public/general.csf
@@ -13,6 +15,17 @@ redalert2/public/general.zh-CN.csf
 # local/iOS boot path reads it (GameRes only loads it on the CDN branch), so it
 # is not distributed here. Verified by deleting it and playing a full match.
 redalert2/public/ini.mix
+
+# --- Android build & signing artifacts ---
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+*.apk
+*.aab
+*.jks
+*.keystore
+ra2_screenshot.png
 
 # --- Dependencies ---
 node_modules/
