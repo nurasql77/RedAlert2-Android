@@ -1,0 +1,78 @@
+name: Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+    paths:
+      - 'android/**'
+      - 'redalert2/**'
+      - '.github/workflows/android-apk.yml'
+  pull_request:
+    paths:
+      - 'android/**'
+      - 'redalert2/**'
+      - '.github/workflows/android-apk.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-apk-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-debug-apk:
+    name: Собрать отладочный APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Получить исходный код
+        uses: actions/checkout@v4
+
+      - name: Установить Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: redalert2/package-lock.json
+
+      - name: Установить JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Установить зависимости веб-клиента
+        working-directory: redalert2
+        run: npm ci
+
+      - name: Собрать веб-интерфейс
+        working-directory: redalert2
+        run: npx vite build
+
+      - name: Поместить WebDist в Android-проект
+        shell: bash
+        run: |
+          rm -rf android/app/src/main/assets/WebDist
+          mkdir -p android/app/src/main/assets/WebDist
+          cp -R redalert2/dist/. android/app/src/main/assets/WebDist/
+          # Retail-файлы игры намеренно не находятся в репозитории. Поэтому
+          # workflow собирает оболочку APK, а не распространяет файлы EA.
+          mkdir -p android/app/src/main/assets/GameRes
+
+      - name: Собрать APK
+        working-directory: android
+        shell: bash
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon assembleDebug
+
+      - name: Загрузить APK как артефакт
+        uses: actions/upload-artifact@v4
+        with:
+          name: RedAlert2-Android-shell-debug
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
